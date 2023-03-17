@@ -15,6 +15,7 @@ from matplotlib import colors
 import numpy as np
 import time
 import os
+import json
 
 parser = argparse.ArgumentParser("HSI")
 parser.add_argument('--dataset', choices=['Indian', 'Pavia', 'Houston'], default='Indian', help='dataset to use')
@@ -301,23 +302,16 @@ torch.cuda.manual_seed(args.seed)
 cudnn.deterministic = True
 cudnn.benchmark = False
 # prepare data
-if args.dataset == 'Indian':
-    data = loadmat('./data/IndianPine.mat')
-elif args.dataset == 'Pavia':
-    data = loadmat('./data/Pavia.mat')
-elif args.dataset == 'Houston':
-    data = loadmat('./data/Houston.mat')
-else:
-    raise ValueError("Unkknow dataset")
-color_mat = loadmat('./data/AVIRIS_colormap.mat')
+data = loadmat('../data/%s/%s_split.mat' % (args.dataset, args.dataset))
+# color_mat = loadmat('./data/AVIRIS_colormap.mat')
 TR = data['TR']
 TE = data['TE']
 input = data['input'] #(145,145,200)
 label = TR + TE
 num_classes = np.max(TR)
 
-color_mat_list = list(color_mat)
-color_matrix = color_mat[color_mat_list[3]] #(17,3)
+# color_mat_list = list(color_mat)
+# color_matrix = color_mat[color_mat_list[3]] #(17,3)
 # normalize data by band norm
 input_normalize = np.zeros(input.shape)
 for i in range(input.shape[2]):
@@ -390,10 +384,10 @@ if args.flag_test == 'test':
     for i in range(total_pos_true.shape[0]):
         prediction_matrix[total_pos_true[i,0], total_pos_true[i,1]] = pre_u[i] + 1
     plt.subplot(1,1,1)
-    plt.imshow(prediction_matrix, colors.ListedColormap(color_matrix))
+    # plt.imshow(prediction_matrix, colors.ListedColormap(color_matrix))
     plt.xticks([])
     plt.yticks([])
-    plt.show()
+    # plt.show()
     savemat('matrix.mat',{'P':prediction_matrix, 'label':label})
 elif args.flag_test == 'train':
     print("start training")
@@ -414,6 +408,25 @@ elif args.flag_test == 'train':
             tar_v, pre_v = valid_epoch(model, label_test_loader, criterion, optimizer)
             OA2, AA_mean2, Kappa2, AA2 = output_metric(tar_v, pre_v)
 
+    # output classification maps
+    pre_u = test_epoch(model, label_true_loader, criterion, optimizer)
+    prediction_matrix = np.zeros((height, width), dtype=float)
+    for i in range(total_pos_true.shape[0]):
+        prediction_matrix[total_pos_true[i,0], total_pos_true[i,1]] = pre_u[i] + 1
+    # savemat('matrix.mat',{'P':prediction_matrix, 'label':label})
+    np.save('%s_spectral_former.pred' % args.dataset, prediction_matrix)
+    res = {}
+    res['oa'] = OA2
+    res['aa'] = AA_mean2
+    res['kappa'] = Kappa2
+    res['each_acc'] = list(AA2)
+    res_json = json.dumps(res)
+    with open('%s_spectral_former.json' % args.dataset, 'w') as fout:
+        fout.write(res_json)
+        fout.flush()
+        fout.close()
+
+    plt.subplot(1,1,1)
     toc = time.time()
     print("Running Time: {:.2f}".format(toc-tic))
     print("**************************************************")
